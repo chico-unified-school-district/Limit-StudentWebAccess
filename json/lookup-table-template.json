@@ -1,0 +1,12 @@
+[
+ {
+     "SiteCode":  "1",
+     "SiteName":  "High School",
+     "OrgUnit":  "OU=High School,OU=Students,OU=Users,DC=K-12,DC=usd",
+ },
+ {
+     "SiteCode":  "2",
+     "SiteName":  "Jr High School",
+     "OrgUnit":  "OU=Jr. High School,OU=Students,OU=Users,DC=K-12,DC=usd",
+ }
+]

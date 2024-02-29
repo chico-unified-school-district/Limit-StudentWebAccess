@@ -1,0 +1,10 @@
+-- SELECT TOP 1 USR
+SELECT *
+FROM LOG
+WHERE
+ID = {0}
+AND CD = 'DSPchg'
+-- AND ND LIKE '%ADPW%Y%'
+-- TODO
+-- AND DTS > DATEADD(minute,-5,getdate())
+ORDER BY DTS DESC
