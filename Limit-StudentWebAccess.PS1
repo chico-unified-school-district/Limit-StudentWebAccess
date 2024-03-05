@@ -81,7 +81,7 @@ function Get-StuADInfo {
 
 function Get-TargetOU {
   begin {
-    $lookUpTable = Get-Content -Path .\json\lookup-table.json -Raw | ConvertFrom-Json
+    $lookUpTable = Get-Content -Path .\json\lookupTable.json -Raw | ConvertFrom-Json
     function Format-Grade ($grade) {
       switch ($grade) {
         -1 { 'Prek' }; -2 { 'Prek ' }; 0 { 'K' }; 1 { '1st' }; 2 { '2nd' }; 3 { '3rd' }; 4 { '4th' }; 5 { '5th' };
