@@ -31,7 +31,7 @@ param (
 function Format-Obj {
   process {
     $obj = '' | Select-Object stuId, fn, ln, stuNum, siteCode, siteName, grade, initiator, initiatorEmail, sendMsg,
-    samid, guid, currentDN, rootOU, targetOU, originalOU, limitAccess, days, startDate, endDate
+    samid, guid, currentDN, rootOU, targetOU, limitAccess, days, startDate, endDate
     $endDate = if ($_.ED.length -lt 1) { (Get-Date $_.DD).AddDays($_.DY) } else { Get-Date $_.ED }
     $obj.stuId = $_.ID
     $obj.fn = $_.FN
@@ -79,7 +79,6 @@ function Get-StuADInfo {
     $_.samid = $obj.SamAccountName
     $_.guid = $obj.ObjectGUID
     $_.currentDN = $obj.DistinguishedName
-    # $_.rootOU = $obj.DistinguishedName.Split(',')[1..100] -join ','
     $_
   }
 }
@@ -101,7 +100,7 @@ function Get-TargetOU {
           # Build proper OU path based on grade level
           'OU={0},{1}' -f (Format-Grade $_.grade), $_.rootOU
         }
-        else { $_.OrgUnit }
+        else { $_.rootOU }
       }
     }
   }
@@ -121,8 +120,7 @@ function Move-ToLimitedOU {
     if ($_.limitAccess -eq $False) { return $_ }
     if ( $_.currentDN -match 'Penalty Box' ) { return $_ }
 
-    Write-Host ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.samid)
-    Set-ADUser -Identity $_.guid -Division $_.originalOU -Confirm:$False -WhatIf:$WhatIf
+    Write-Host ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.samid) -F Blue
     Move-ADObject -Identity $_.guid -TargetPath $_.targetOU -Confirm:$false -WhatIf:$WhatIf
     $_.sendMsg = $true
     if (!$WhatIF) { Start-Sleep 15 }
@@ -133,21 +131,14 @@ function Move-ToLimitedOU {
 function Move-ToRegularOU {
   process {
     if (($_.currentDN -match 'Penalty Box') -and ($_.limitAccess -eq $False )) {
-      if (!$_.originalOU) {
-        # If origianlOU is null then have external process set the correct OU
-        Write-Host ('{0},{1},Original OU missing. Trying alternate method.' -f $MyInvocation.MyCommand.Name, $_.samid)
-        Set-ADUser -Identity $_.guid -Replace @{gecos = ([int]$_.grade + 1) } -Confirm:$False -WhatIf:$WhatIf
-        return $_
-      }
       Write-Host ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.samid)
-      Set-ADUser -Identity $_.guid -Clear Division -Confirm:$False -WhatIf:$WhatIf
-      Move-ADObject -Identity $_.guid -TargetPath $_.originalOU -Confirm:$false -WhatIf:$WhatIf
+      Move-ADObject -Identity $_.guid -TargetPath $_.targetOU -Confirm:$false -WhatIf:$WhatIf
     }
     $_
   }
 }
 
-function Send-PenaltyBoxMsg ($url) {
+function Send-Msg {
   begin {
     $baseHtml = Get-Content '.\html\msg.html' -Raw
     $params = @{
@@ -194,7 +185,6 @@ function Test-ADSession {
 
 # =============================== Main ==================================
 # Imported Functions
-. .\lib\Clear-SessionData.ps1 # Useful function for querying SQL and returning results
 . .\lib\Load-Module.ps1
 . .\lib\New-ADSession.ps1
 . .\lib\Select-DomainController.ps1
@@ -212,22 +202,21 @@ $sqlParamsSIS = @{
 }
 
 $getSISLimitedStuData = Get-Content -Path .\sql\get-sis-limited-stu-data.sql -Raw
-#TODO
-$waitInterval = 10
+
+$waitInterval = 60
 if (!$WhatIf) { "Runs every $waitInterval seconds" }
 do {
-  #TODO
-  # Test-ADSession
+  Test-ADSession
 
   Get-SqlData $sqlParamsSIS $getSISLimitedStuData |
   Format-Obj |
   Get-Email |
   Get-StuADInfo |
   Set-LimitStatus |
-  Get-TargetOU | # Based of of lookup table or better still, from current ou and some smart logic
-  Move-ToLimitedOU | # Move OU?
-  Send-PenaltyBoxMsg |
-  Move-ToRegularOU | # One could just set gecos to whatever minus 1 and the sync-student accounts will fix it.
+  Get-TargetOU |
+  Move-ToLimitedOU |
+  Send-Msg |
+  Move-ToRegularOU |
   Show-Obj
 
   if (!$WhatIf) { Start-Sleep $waitInterval }
