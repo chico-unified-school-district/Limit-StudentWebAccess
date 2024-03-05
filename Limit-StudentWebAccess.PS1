@@ -181,6 +181,7 @@ function Test-ADSession {
 
 # =============================== Main ==================================
 # Imported Functions
+. .\lib\Clear-SessionData.ps1
 . .\lib\Load-Module.ps1
 . .\lib\New-ADSession.ps1
 . .\lib\Select-DomainController.ps1
