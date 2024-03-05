@@ -117,6 +117,7 @@ function Move-ToLimitedOU {
     if ( $_.currentDN -match 'Penalty Box' ) { return $_ }
 
     Write-Host ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.samid) -F Blue
+    #TODO ADD ERROR ACTION
     Move-ADObject -Identity $_.guid -TargetPath $_.targetOU -Confirm:$false -WhatIf:$WhatIf
     $_.sendMsg = $true
     if (!$WhatIF) { Start-Sleep 15 }
@@ -128,6 +129,7 @@ function Move-ToRegularOU {
   process {
     if (($_.currentDN -match 'Penalty Box') -and ($_.limitAccess -eq $False )) {
       Write-Host ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.samid)
+      #TODO ADD ERROR ACTION
       Move-ADObject -Identity $_.guid -TargetPath $_.targetOU -Confirm:$false -WhatIf:$WhatIf
     }
     $_
@@ -205,7 +207,9 @@ if (!$WhatIf) { "Runs every $waitInterval seconds" }
 do {
   Test-ADSession
 
-  Get-SqlData $sqlParamsSIS $getSISLimitedStuData |
+  $sisData = Get-SqlData $sqlParamsSIS $getSISLimitedStuData
+  # Process existing entries
+  $sisData |
   Format-Obj |
   Get-Email |
   Get-StuADInfo |
@@ -215,6 +219,9 @@ do {
   Send-Msg |
   Move-ToRegularOU |
   Show-Obj
+
+  # Free up deleted/missing entries
+  # Get-ADInPenaltyOU | Compare-CurrentSIS |
 
   if (!$WhatIf) { Start-Sleep $waitInterval }
 } until ($WhatIf -or ((Get-Date) -ge (Get-Date $StopTime)))
