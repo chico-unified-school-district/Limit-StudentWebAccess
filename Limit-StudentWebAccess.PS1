@@ -19,11 +19,7 @@ param (
   [System.Management.Automation.PSCredential]$EmailCredential,
   [Parameter(Mandatory = $false)]
   [string[]]$Bcc,
-  [string]$StopTime = "11:00 PM",
-  [Parameter(Mandatory = $false)]
-  [string]$PrimaryGroup,
-  [Parameter(Mandatory = $true)]
-  [string]$SecondaryGroup,
+  [string]$StopTime,
   [Alias('wi')]
   [SWITCH]$WhatIf
 )
