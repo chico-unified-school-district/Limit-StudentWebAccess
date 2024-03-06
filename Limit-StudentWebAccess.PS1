@@ -230,9 +230,7 @@ $getStuSISEntry = Get-Content -Path .\sql\get-stu-sis.sql -Raw
 $waitInterval = 60
 if (!$WhatIf) { "Runs every $waitInterval seconds" }
 do {
-
-  #TODO
-  # Test-ADSession
+  Test-ADSession
 
   $sisActivePenaltyData = Get-SISActivePenatly $sqlParamsSIS $getSISLimitedStuData
   # Process existing entries
