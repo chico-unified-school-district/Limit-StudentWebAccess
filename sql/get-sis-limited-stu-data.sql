@@ -1,14 +1,14 @@
 SELECT
- STU.ID
-,STU.FN
-,STU.LN
-,STU.GR
-,STU.SN
-,STU.SC
-,DSP.DY
-,DSP.DD
-,DSP.ED
-,DSP.IUN
+ STU.ID AS permId
+,STU.FN AS firstName
+,STU.LN AS lastName
+,STU.GR AS grade
+,STU.SN AS stuNum
+,STU.SC AS siteCode
+,DSP.DY AS dayCount
+,DSP.DD AS startDate
+,DSP.ED AS endDate
+,DSP.IUN AS staffUsr
 from DSP LEFT JOIN STU ON stu.id = dsp.pid
 where pid IS NOT NULL
 AND DSP.DS = 'PB'
