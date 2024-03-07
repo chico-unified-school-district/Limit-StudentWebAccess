@@ -14,4 +14,5 @@ where pid IS NOT NULL
 AND DSP.DS = 'PB'
 AND DY > 0
 AND (DSP.DEL = 0 OR DSP.DEL IS NULL)
+AND DSP.ED > getdate()
 AND dsp.dts > DATEADD(year, -1, getdate());

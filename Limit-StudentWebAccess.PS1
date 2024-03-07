@@ -27,7 +27,7 @@ param (
 function Compare-SISActviePenalty ($data) {
   process {
     $id = $_.ad.EmployeeId
-    $obj = $data.Where({ $_.permId -eq $id })
+    $obj = $data | Where-Object { $_.permId -eq $id }
     if ($obj) { return } # If a match is found then skip entry, otherwise press on!
     $_
   }
@@ -151,15 +151,13 @@ function Move-ToTargetOU {
   process {
     $msg = $MyInvocation.MyCommand.Name, $_.ad.SamAccountName, ($_.targetOU.Split(',')[0..1] -join ',')
     $currentOU = $_.ad.DistinguishedName.Split(',')[1..100] -join ','
-
     Write-Verbose ($_.ad.SamAccountName, "Current: $currentOU", "Target:  $($_.targetOU)" | Out-String)
-
-    if ($currentOU -eq $_.targetOU) { return }
+    if ($currentOU -eq $_.targetOU) { return $_ }
 
     try { Move-ADObject -Identity $_.ad.ObjectGUID -TargetPath $_.targetOU -Confirm:$false -WhatIf:$WhatIf }
     catch { return (Write-Error ('{0},{1},{2}' -f $msg)) }
     Write-Host ('{0},{1},{2}' -f $msg) -f Blue
-    if ($_.limitAccess -eq $true) { $_.sendMsg -eq $true }
+    if ($_.limitAccess -eq $true) { $_.sendMsg = $true }
     $_
   }
 }
@@ -181,13 +179,16 @@ function Send-Msg {
   process {
     if ($_.sendMsg -eq $false) { return $_ }
 
-    Write-Host ('{0},{1},{2}' -f $MyInvocation.MyCommand.Name, $_.staffEmail, $_.ad.SamAccountName) -F Blue
-
+    $msg = $MyInvocation.MyCommand.Name, $_.staffEmail, $_.ad.SamAccountName
+    Write-Host ('{0},{1},{2}' -f $msg) -F Blue
     $params.To = '<{0}>' -f $_.staffEmail
     $params.Body = $baseHtml -f $_.fn, $_.ln, $_.startDate, $_.endDate, $_.sis.permId, $_.siteName, $_.sis.grade
     if ( $Bcc ) { $params.Bcc = $Bcc } # Add Bcc to outgoing email messages.
     Write-Verbose ($params | out-string)
-    if (!$WhatIf) { Send-MailMessage @params }
+    if (!$WhatIf) {
+      # try { Send-MailMessage @params }
+      # catch { return (Write-Error ('{0},{1},{2}' -f $msg)) }
+    }
     $_
   }
 }
@@ -249,6 +250,7 @@ do {
   Test-ADSession
 
   $sisActivePenaltyData = Get-SISActivePenatly $sqlParamsSIS $getSISLimitedStuData
+
   # Process existing entries
   $sisActivePenaltyData |
   Format-FirstObj |
