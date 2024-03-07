@@ -186,8 +186,8 @@ function Send-Msg {
     if ( $Bcc ) { $params.Bcc = $Bcc } # Add Bcc to outgoing email messages.
     Write-Verbose ($params | out-string)
     if (!$WhatIf) {
-      # try { Send-MailMessage @params }
-      # catch { return (Write-Error ('{0},{1},{2}' -f $msg)) }
+      try { Send-MailMessage @params }
+      catch { return (Write-Error ('{0},{1},{2}' -f $msg)) }
     }
     $_
   }
