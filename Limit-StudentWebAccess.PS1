@@ -179,16 +179,15 @@ function Send-Msg {
   process {
     if ($_.sendMsg -eq $false) { return $_ }
 
-    $msg = $MyInvocation.MyCommand.Name, $_.staffEmail, $_.ad.SamAccountName
-    Write-Host ('{0},{1},{2}' -f $msg) -F Blue
+    $msg = $MyInvocation.MyCommand.Name, $_.staffEmail, $_.ad.SamAccountName, $_.sis.startDate, $_.sis.endDate
     $params.To = '<{0}>' -f $_.staffEmail
     $params.Body = $baseHtml -f $_.fn, $_.ln, $_.startDate, $_.endDate, $_.sis.permId, $_.siteName, $_.sis.grade
     if ( $Bcc ) { $params.Bcc = $Bcc } # Add Bcc to outgoing email messages.
-    Write-Verbose ($params | out-string)
     if (!$WhatIf) {
       try { Send-MailMessage @params }
-      catch { return (Write-Error ('{0},{1},{2}' -f $msg)) }
+      catch { return (Write-Error ('{0},{1},{2},{3},{4}' -f $msg)) }
     }
+    Write-Host ('{0},{1},{2},{3},{4}' -f $msg) -F Blue
     $_
   }
 }
