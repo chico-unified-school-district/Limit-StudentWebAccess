@@ -162,9 +162,8 @@ function Move-ToTargetOU {
   }
 }
 
-function Send-Msg {
+function Send-Msg ($baseHtml) {
   begin {
-    $baseHtml = Get-Content '.\html\msg.html' -Raw
     $params = @{
       From       = '<{0}>' -f $EmailCredential.Username
       Subject    = 'CUSD Student Moved to Penalty Box'
@@ -181,12 +180,14 @@ function Send-Msg {
 
     $msg = $MyInvocation.MyCommand.Name, $_.staffEmail, $_.ad.SamAccountName, $_.sis.startDate, $_.sis.endDate
     $params.To = '<{0}>' -f $_.staffEmail
-    $params.Body = $baseHtml -f $_.fn, $_.ln, $_.startDate, $_.endDate, $_.sis.permId, $_.siteName, $_.sis.grade
+    $params.Body = $baseHtml -f $_.sis.firstName, $_.sis.lastName, $_.sis.startDate,
+    $_.sis.endDate, $_.sis.permId, $_.site.siteName, $_.sis.grade
     if ( $Bcc ) { $params.Bcc = $Bcc } # Add Bcc to outgoing email messages.
     if (!$WhatIf) {
       try { Send-MailMessage @params }
       catch { return (Write-Error ('{0},{1},{2},{3},{4}' -f $msg)) }
     }
+    Write-Verbose ($params.Body | Out-String)
     Write-Host ('{0},{1},{2},{3},{4}' -f $msg) -F Blue
     $_
   }
@@ -237,9 +238,9 @@ $sqlParamsSIS = @{
   TrustServerCertificate = $true
 }
 
+$htmlMsg = Get-Content '.\html\msg.html' -Raw
 $getSISLimitedStuData = Get-Content -Path .\sql\get-sis-limited-stu-data.sql -Raw
 $getStuSISEntry = Get-Content -Path .\sql\get-stu-sis.sql -Raw
-
 Test-ADSession
 $penaltyOrgUnits = Get-ADOrganizationalUnit -Filter "name -like '*Penalty*Box*'"
 
@@ -260,7 +261,7 @@ do {
   Set-LimitStatus |
   Get-TargetOU |
   Move-ToTargetOU |
-  Send-Msg |
+  Send-Msg ($htmlMsg) |
   Show-Obj
 
   # Process deleted/missing entries
