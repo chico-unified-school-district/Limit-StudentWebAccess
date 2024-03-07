@@ -66,6 +66,7 @@ function Get-ADInPenaltyOU ($orgUnits) {
     Filter     = "gecos -like '*' -and EmployeeId -like '*'"
     Properties = 'EmployeeID', 'gecos', 'departmentNumber'
   }
+  Write-Verbose ('{0}' -f $MyInvocation.MyCommand.Name)
   $orgUnits | ForEach-Object { Get-ADUser @params -SearchBase $_.DistinguishedName }
 }
 
@@ -153,11 +154,12 @@ function Move-ToTargetOU {
 
     Write-Verbose ($_.ad.SamAccountName, "Current: $currentOU", "Target:  $($_.targetOU)" | Out-String)
 
-    if ($currentOU -eq $_.targetOU) { return (Write-Verbose ('{0},{1},Already in Correct OU: {2}' -f $msg)), $_ }
+    if ($currentOU -eq $_.targetOU) { return }
 
-    Write-Host ('{0},{1},{2}' -f $msg)
     try { Move-ADObject -Identity $_.ad.ObjectGUID -TargetPath $_.targetOU -Confirm:$false -WhatIf:$WhatIf }
     catch { return (Write-Error ('{0},{1},{2}' -f $msg)) }
+    Write-Host ('{0},{1},{2}' -f $msg) -f Blue
+    if ($_.limitAccess -eq $true) { $_.sendMsg -eq $true }
     $_
   }
 }
@@ -178,7 +180,9 @@ function Send-Msg {
   }
   process {
     if ($_.sendMsg -eq $false) { return $_ }
-    Write-Host ('{0},{1},{2},{3}' -f $MyInvocation.MyCommand.Name, $_.staffEmail, $_.ad.SamAccountName, (Get-Date)) -F Blue
+
+    Write-Host ('{0},{1},{2}' -f $MyInvocation.MyCommand.Name, $_.staffEmail, $_.ad.SamAccountName) -F Blue
+
     $params.To = '<{0}>' -f $_.staffEmail
     $params.Body = $baseHtml -f $_.fn, $_.ln, $_.startDate, $_.endDate, $_.sis.permId, $_.siteName, $_.sis.grade
     if ( $Bcc ) { $params.Bcc = $Bcc } # Add Bcc to outgoing email messages.
@@ -196,7 +200,14 @@ function Set-LimitStatus {
   }
 }
 
-function Show-Obj { Process { Write-Verbose ($MyInvocation.MyCommand.Name, $_ | Out-String) } }
+function Show-Obj {
+  begin { $i = 0 }
+  Process {
+    $i++
+    Write-Verbose ($i, $MyInvocation.MyCommand.Name, $_ | Out-String)
+    Write-Debug 'Proceed?'
+  }
+}
 
 function Test-ADSession {
   # AD Domain Controller Session
