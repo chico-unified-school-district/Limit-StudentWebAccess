@@ -229,6 +229,7 @@ $sqlParamsSIS = @{
 $getSISLimitedStuData = Get-Content -Path .\sql\get-sis-limited-stu-data.sql -Raw
 $getStuSISEntry = Get-Content -Path .\sql\get-stu-sis.sql -Raw
 
+Test-ADSession
 $penaltyOrgUnits = Get-ADOrganizationalUnit -Filter "name -like '*Penalty*Box*'"
 
 $waitInterval = 60
