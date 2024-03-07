@@ -61,10 +61,12 @@ function Format-SecondObj {
   }
 }
 
-function Get-ADInPenaltyOU {
-  $properties = 'EmployeeID', 'gecos', 'departmentNumber'
-  Get-ADUser -Filter "gecos -like '*' -and EmployeeId -like '*'" -Properties $properties |
-  Where-Object { $_.DistinguishedName -like '*Penalty*' }
+function Get-ADInPenaltyOU ($orgUnits) {
+  $params = @{
+    Filter     = "gecos -like '*' -and EmployeeId -like '*'"
+    Properties = 'EmployeeID', 'gecos', 'departmentNumber'
+  }
+  $orgUnits | ForEach-Object { Get-ADUser @params -SearchBase $_.DistinguishedName }
 }
 
 function Get-Email {
@@ -201,7 +203,7 @@ function Test-ADSession {
   if (($global:dc) -and (Test-ComputerSecureChannel -Server $global:dc)) { return }
   Clear-SessionData
   $global:dc = Select-DomainController $DomainControllers
-  $adCmdLets = 'Get-ADUser', 'Set-ADUser', 'Move-ADObject'
+  $adCmdLets = 'Get-ADUser', 'Set-ADUser', 'Move-ADObject', 'Get-ADOrganizationalUnit'
   New-ADSession -dc $dc -cmdlets $adCmdLets -cred $ADCredential
 }
 
@@ -227,6 +229,8 @@ $sqlParamsSIS = @{
 $getSISLimitedStuData = Get-Content -Path .\sql\get-sis-limited-stu-data.sql -Raw
 $getStuSISEntry = Get-Content -Path .\sql\get-stu-sis.sql -Raw
 
+$penaltyOrgUnits = Get-ADOrganizationalUnit -Filter "name -like '*Penalty*Box*'"
+
 $waitInterval = 60
 if (!$WhatIf) { "Runs every $waitInterval seconds" }
 do {
@@ -247,7 +251,7 @@ do {
   Show-Obj
 
   # Process deleted/missing entries
-  Get-ADInPenaltyOU |
+  Get-ADInPenaltyOU $penaltyOrgUnits |
   Format-SecondObj |
   Compare-SISActviePenalty $sisActivePenaltyData |
   Get-StuSISEntry $sqlParamsSIS $getStuSISEntry |
