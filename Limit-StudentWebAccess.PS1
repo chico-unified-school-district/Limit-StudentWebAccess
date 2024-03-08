@@ -88,8 +88,7 @@ function Get-StuSISEntry ($params, $baseSql) {
   }
 }
 
-function Get-SiteData {
-  begin { $lookUpTable = Get-Content -Path .\json\lookupTable.json -Raw | ConvertFrom-Json }
+function Get-SiteData ($lookUpTable) {
   process {
     $siteCode = $_.sis.siteCode
     $site = $lookUpTable.Where({ [int]$_.SiteCode -eq [int]$siteCode }) | ConvertTo-Csv | ConvertFrom-Csv
@@ -238,6 +237,7 @@ $sqlParamsSIS = @{
   TrustServerCertificate = $true
 }
 
+$lookUpTable = Get-Content -Path .\json\lookupTable.json -Raw | ConvertFrom-Json
 $htmlMsg = Get-Content '.\html\msg.html' -Raw
 $getSISLimitedStuData = Get-Content -Path .\sql\get-sis-limited-stu-data.sql -Raw
 $getStuSISEntry = Get-Content -Path .\sql\get-stu-sis.sql -Raw
@@ -255,7 +255,7 @@ do {
   $sisActivePenaltyData |
   Format-FirstObj |
   Format-Dates |
-  Get-SiteData |
+  Get-SiteData $lookUpTable |
   Get-Email |
   Get-StuADInfo |
   Set-LimitStatus |
@@ -269,7 +269,7 @@ do {
   Format-SecondObj |
   Compare-SISActviePenalty $sisActivePenaltyData |
   Get-StuSISEntry $sqlParamsSIS $getStuSISEntry |
-  Get-SiteData |
+  Get-SiteData $lookUpTable |
   Get-TargetOU |
   Move-ToTargetOU |
   Show-Obj
