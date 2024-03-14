@@ -129,7 +129,8 @@ function Get-TargetOU {
       process {
         # Skip Handling of School 19 (Special Education) and Grades Over the 18th Level
         # The departmentNumber attribute is an array so we reference the zeroth index
-        if (($_.sis.grade -le 18) -and ([int]$_.ad.departmentNumber[0] -ne 19)) {
+        # if (($_.sis.grade -le 18) -and ([int]$_.ad.departmentNumber[0] -ne 19)) {
+        if ([int]$_.sis.grade -le 18) {
           # Build proper OU path based on grade level
           'OU={0},{1}' -f (Format-Grade $_.sis.grade), $_.site.OrgUnit
         }
