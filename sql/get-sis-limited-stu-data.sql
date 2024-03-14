@@ -1,10 +1,8 @@
-SELECT
+SELECT DISTINCT
  STU.ID AS permId
 ,STU.FN AS firstName
 ,STU.LN AS lastName
 ,STU.GR AS grade
-,STU.SN AS stuNum
-,STU.SC AS siteCode
 ,DSP.DY AS dayCount
 ,DSP.DD AS startDate
 ,DSP.ED AS endDate

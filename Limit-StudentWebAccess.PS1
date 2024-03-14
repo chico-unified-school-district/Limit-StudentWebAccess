@@ -82,7 +82,7 @@ function Get-Email {
 
 function Get-StuSISEntry ($params, $baseSql) {
   process {
-    $sql = $baseSql -f $_.ad.EmployeeID, $_.ad.departmentNumber
+    $sql = $baseSql -f $_.ad.EmployeeID, $_.ad.departmentNumber[0]
     $_.sis = Invoke-SqlCmd @params -Query $sql | ConvertTo-Csv | ConvertFrom-Csv
     $_
   }
@@ -90,7 +90,7 @@ function Get-StuSISEntry ($params, $baseSql) {
 
 function Get-SiteData ($lookUpTable) {
   process {
-    $siteCode = $_.sis.siteCode
+    $siteCode = $_.ad.departmentNumber[0]
     $site = $lookUpTable.Where({ [int]$_.SiteCode -eq [int]$siteCode }) | ConvertTo-Csv | ConvertFrom-Csv
     $_.site = $site
     $_
@@ -128,7 +128,7 @@ function Get-TargetOU {
     function Format-OrgUnitPath {
       process {
         # Skip Handling of School 19 (Special Education) and Grades Over the 18th Level
-        # The departmentNumber attribute is an array so we need the zeroth index from that mess
+        # The departmentNumber attribute is an array so we reference the zeroth index
         if (($_.sis.grade -le 18) -and ([int]$_.ad.departmentNumber[0] -ne 19)) {
           # Build proper OU path based on grade level
           'OU={0},{1}' -f (Format-Grade $_.sis.grade), $_.site.OrgUnit
@@ -255,9 +255,9 @@ do {
   $sisActivePenaltyData |
   Format-FirstObj |
   Format-Dates |
+  Get-StuADInfo |
   Get-SiteData $lookUpTable |
   Get-Email |
-  Get-StuADInfo |
   Set-LimitStatus |
   Get-TargetOU |
   Move-ToTargetOU |
