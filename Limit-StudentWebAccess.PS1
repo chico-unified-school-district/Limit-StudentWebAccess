@@ -33,13 +33,10 @@ function Compare-SISActviePenalty ($data) {
   }
 }
 
-function Format-Dates {
+function Format-EndDate {
   process {
-    $endDate = if ($_.sis.endDate.length -lt 1) { (Get-Date $_.sis.startDate).AddDays($_.sis.dayCount) }
-    else { Get-Date $_.sis.endDate }
-    $startDate = if ($_.sis.startDate.length -lt 1) { Get-Date } else { Get-Date $_.sis.startDate }
-    $_.sis.startDate = $startDate
-    $_.sis.endDate = (Get-Date $endDate).AddHours(23.9) # Ensure that the last full day is recognized
+    # Ensure that the last full day is recognized via -Hour 23 param
+    $_.sis.endDate = Get-Date ((Get-Date $_.sis.startDate).AddDays($_.sis.dayCount)) -Hour 23
     $_
   }
 }
@@ -120,7 +117,7 @@ function Get-TargetOU {
   begin {
     function Format-Grade ($grade) {
       switch ($grade) {
-        -1 { 'Prek' }; -2 { 'Prek ' }; 0 { 'K' }; 1 { '1st' }; 2 { '2nd' }; 3 { '3rd' }; 4 { '4th' }; 5 { '5th' };
+        -1 { 'Prek' }; -2 { 'Prek' }; 0 { 'K' }; 1 { '1st' }; 2 { '2nd' }; 3 { '3rd' }; 4 { '4th' }; 5 { '5th' };
         6 { '6th' }; 7 { '7th' }; 8 { '8th' }; 9 { '9th' }; 10 { '10th' }; 11 { '11th' }; 12 { '12th' };
         13 { '12th' }; 14 { '12th' }; 17 { 'Prek' }; 18 { 'Prek' }
       }
@@ -187,7 +184,7 @@ function Send-Msg ($baseHtml) {
       try { Send-MailMessage @params }
       catch { return (Write-Error ('{0},{1},{2},{3},{4}' -f $msg)) }
     }
-    Write-Verbose ($params.Body | Out-String)
+    # Write-Verbose ($params.Body | Out-String)
     Write-Host ('{0},{1},{2},{3},{4}' -f $msg) -F Blue
     $_
   }
@@ -218,6 +215,35 @@ function Test-ADSession {
   $adCmdLets = 'Get-ADUser', 'Set-ADUser', 'Move-ADObject', 'Get-ADOrganizationalUnit'
   New-ADSession -dc $dc -cmdlets $adCmdLets -cred $ADCredential
 }
+#TODO PBN days are messed up
+function Update-PenaltyDays ($params, $baseSql, $defaultDays) {
+  process {
+    $days = if ($_.sis.pbType -eq 'PBN') { 3650 } else { $defaultDays }
+    if ($_.sis.dayCount -lt 1) {
+      # $days = if ($_.sis.pbType -eq 'PBN') { 3650 } else { $defaultDays }
+      $sql = $baseSql -f $days, $_.sis.permId, $_.sis.pbType
+      Write-Host ('{0},{1},{2}' -f $MyInvocation.MyCommand.Name, $_.sis.permId, $sql) -F Blue
+      if (!$WhatIf) { Invoke-Sqlcmd @params -Query $sql }
+      $_.sis.dayCount = $days
+    }
+    $_
+  }
+}
+
+function Update-StartDate ($params, $baseSql) {
+  process {
+    if ($_.sis.startDate.length -lt 6) {
+      $newStartDate = Get-Date
+      $sql = $baseSql -f $newStartDate, $_.sis.permId, $_.sis.pbType
+      Write-Host ('{0},{1},{2}' -f $MyInvocation.MyCommand.Name, $_.sis.permId, $sql) -F Blue
+      if (!$WhatIf) { Invoke-Sqlcmd @params -Query $sql }
+      $_.sis.startDate = $newStartDate
+      return $_
+    }
+    $_.sis.startDate = Get-Date $_.sis.startDate
+    $_
+  }
+}
 
 # =============================== Main ==================================
 # Imported Functions
@@ -242,9 +268,14 @@ $lookUpTable = Get-Content -Path .\json\lookupTable.json -Raw | ConvertFrom-Json
 $htmlMsg = Get-Content '.\html\msg.html' -Raw
 $getSISLimitedStuData = Get-Content -Path .\sql\get-sis-limited-stu-data.sql -Raw
 $getStuSISEntry = Get-Content -Path .\sql\get-stu-sis.sql -Raw
+$setDayCount = Get-Content -Path .\sql\set-daycount.sql -Raw
+$setStartDate = Get-Content -Path .\sql\set-startdate.sql -Raw
+
 Test-ADSession
+
 $penaltyOrgUnits = Get-ADOrganizationalUnit -Filter "name -like '*Penalty*Box*'"
 
+$defaultDays = 7
 $waitInterval = 60
 if (!$WhatIf) { "Runs every $waitInterval seconds" }
 do {
@@ -255,7 +286,9 @@ do {
   # Process existing entries
   $sisActivePenaltyData |
   Format-FirstObj |
-  Format-Dates |
+  Update-StartDate $sqlParamsSIS $setStartDate |
+  Update-PenaltyDays $sqlParamsSIS $setDayCount $defaultDays |
+  Format-EndDate |
   Get-StuADInfo |
   Get-SiteData $lookUpTable |
   Get-Email |
@@ -275,5 +308,8 @@ do {
   Move-ToTargetOU |
   Show-Obj
 
-  if (!$WhatIf) { Start-Sleep $waitInterval }
+  if (!$WhatIf) {
+    Write-Verbose "Waiting $waitInterval..."
+    Start-Sleep $waitInterval
+  }
 } until ($WhatIf -or ((Get-Date) -ge (Get-Date $StopTime)))
