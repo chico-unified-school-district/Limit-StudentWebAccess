@@ -20,6 +20,6 @@ WHERE
 STU.TG = ' ' -- Active Students only!
 AND ( DSD.DS = 'PB' OR DSD.DS = 'PBN') -- PBN is Penalty Box No End Date
 AND (DSD.DEL IS NOT NULL OR DSD.DEL = 0)
--- endDate greater than 1 days ago
+-- Include blank startDates and Exclude expired endDates
 AND ( DSD.DD IS NULL OR DATEADD(day,DY,DSD.DD) > DATEADD(day,-1,GETDATE()) )
 ;

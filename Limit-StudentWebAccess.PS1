@@ -33,17 +33,9 @@ function Compare-SISActviePenalty ($data) {
   }
 }
 
-function Format-EndDate {
-  process {
-    # Ensure that the last full day is recognized via -Hour 23 param
-    $_.sis.endDate = Get-Date ((Get-Date $_.sis.startDate).AddDays($_.sis.dayCount)) -Hour 23
-    $_
-  }
-}
-
 function Format-FirstObj {
   process {
-    $obj = '' | Select-Object sis, ad, site, targetOU, staffEmail, sendMsg, limitAccess
+    $obj = '' | Select-Object sis, ad, site, days, targetOU, staffEmail, sendMsg, limitAccess
     $obj.sis = $_ # Drop entire converted sis object into 'sis' prop
     $obj.sendMsg = $false
     $obj
@@ -163,7 +155,7 @@ function Send-Msg ($baseHtml) {
   begin {
     $params = @{
       From       = '<{0}>' -f $EmailCredential.Username
-      Subject    = 'CUSD Student Moved to Penalty Box'
+      Subject    = 'Student to Penalty Box'
       BodyAsHTML = $True
       Bcc        = $null
       SMTPServer = 'smtp.office365.com'
@@ -176,6 +168,7 @@ function Send-Msg ($baseHtml) {
     if ($_.sendMsg -eq $false) { return $_ }
 
     $msg = $MyInvocation.MyCommand.Name, $_.staffEmail, $_.ad.SamAccountName, $_.sis.startDate, $_.sis.endDate
+
     $params.To = '<{0}>' -f $_.staffEmail
     $params.Body = $baseHtml -f $_.sis.firstName, $_.sis.lastName, $_.sis.startDate,
     $_.sis.endDate, $_.sis.permId, $_.site.siteName, $_.sis.grade
@@ -190,10 +183,35 @@ function Send-Msg ($baseHtml) {
   }
 }
 
+function Set-DayCount {
+  process {
+    if (($_.sis.dayCount -gt 1) -and ($_.sis.pbType -ne 'PBN')) { return $_ }
+    # If dayCount is null or zero then it needs to be filled in.
+    $_.days = if ($_.sis.pbType -eq 'PBN') { 3650 } else { 7 }
+    $_
+  }
+}
+
+function Set-EndDate {
+  process {
+    # Ensure that the last full day is recognized via -Hour 23 param
+    $_.sis.endDate = Get-Date ((Get-Date $_.sis.startDate).AddDays($_.days)) -Hour 23
+    $_
+  }
+}
+
+
 function Set-LimitStatus {
   begin { $now = Get-Date }
   process {
-    $_.limitAccess = if ($now -lt $_.sis.endDate) { $true } else { $false }
+    $_.limitAccess = if ($now -lt $_.sis.endDate) { $true }
+    $_
+  }
+}
+
+function Set-StartDate {
+  process {
+    $_.sis.startDate = if ($_.sis.startDate.length -lt 1) { Get-Date } else { Get-Date $_.sis.startDate }
     $_
   }
 }
@@ -215,16 +233,13 @@ function Test-ADSession {
   $adCmdLets = 'Get-ADUser', 'Set-ADUser', 'Move-ADObject', 'Get-ADOrganizationalUnit'
   New-ADSession -dc $dc -cmdlets $adCmdLets -cred $ADCredential
 }
-#TODO PBN days are messed up
-function Update-PenaltyDays ($params, $baseSql, $defaultDays) {
+
+function Update-PenaltyDays ($params, $baseSql) {
   process {
-    $days = if ($_.sis.pbType -eq 'PBN') { 3650 } else { $defaultDays }
-    if ($_.sis.dayCount -lt 1) {
-      # $days = if ($_.sis.pbType -eq 'PBN') { 3650 } else { $defaultDays }
-      $sql = $baseSql -f $days, $_.sis.permId, $_.sis.pbType
+    if (($_.sis.dayCount -lt 1) -or (($_.sis.pbType -eq 'PBN') -and ($_.sis.dayCount -ne 3650))) {
+      $sql = $baseSql -f $_.days, $_.sis.permId, $_.sis.pbType
       Write-Host ('{0},{1},{2}' -f $MyInvocation.MyCommand.Name, $_.sis.permId, $sql) -F Blue
       if (!$WhatIf) { Invoke-Sqlcmd @params -Query $sql }
-      $_.sis.dayCount = $days
     }
     $_
   }
@@ -232,15 +247,11 @@ function Update-PenaltyDays ($params, $baseSql, $defaultDays) {
 
 function Update-StartDate ($params, $baseSql) {
   process {
-    if ($_.sis.startDate.length -lt 6) {
-      $newStartDate = Get-Date
-      $sql = $baseSql -f $newStartDate, $_.sis.permId, $_.sis.pbType
+    if ($_.sis.startDate.length -lt 1 ) {
+      $sql = $baseSql -f $_.sis.permId, $_.sis.pbType
       Write-Host ('{0},{1},{2}' -f $MyInvocation.MyCommand.Name, $_.sis.permId, $sql) -F Blue
       if (!$WhatIf) { Invoke-Sqlcmd @params -Query $sql }
-      $_.sis.startDate = $newStartDate
-      return $_
     }
-    $_.sis.startDate = Get-Date $_.sis.startDate
     $_
   }
 }
@@ -275,7 +286,6 @@ Test-ADSession
 
 $penaltyOrgUnits = Get-ADOrganizationalUnit -Filter "name -like '*Penalty*Box*'"
 
-$defaultDays = 7
 $waitInterval = 60
 if (!$WhatIf) { "Runs every $waitInterval seconds" }
 do {
@@ -287,8 +297,10 @@ do {
   $sisActivePenaltyData |
   Format-FirstObj |
   Update-StartDate $sqlParamsSIS $setStartDate |
-  Update-PenaltyDays $sqlParamsSIS $setDayCount $defaultDays |
-  Format-EndDate |
+  Set-StartDate |
+  Set-DayCount |
+  Update-PenaltyDays $sqlParamsSIS $setDayCount |
+  Set-EndDate |
   Get-StuADInfo |
   Get-SiteData $lookUpTable |
   Get-Email |
