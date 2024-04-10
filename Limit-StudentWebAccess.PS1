@@ -170,8 +170,8 @@ function Send-Msg ($baseHtml) {
     $msg = $MyInvocation.MyCommand.Name, $_.staffEmail, $_.ad.SamAccountName, $_.sis.startDate, $_.sis.endDate
 
     $params.To = '<{0}>' -f $_.staffEmail
-    $params.Body = $baseHtml -f $_.sis.firstName, $_.sis.lastName, $_.sis.startDate,
-    $_.sis.endDate, $_.sis.permId, $_.site.siteName, $_.sis.grade
+    $params.Body = $baseHtml -f $_.sis.firstName, $_.sis.lastName, $_.sis.startDate, $_.sis.endDate,
+    $_.sis.permId, $_.site.siteName, $_.sis.grade
     if ( $Bcc ) { $params.Bcc = $Bcc } # Add Bcc to outgoing email messages.
     if (!$WhatIf) {
       try { Send-MailMessage @params }
@@ -185,9 +185,10 @@ function Send-Msg ($baseHtml) {
 
 function Set-DayCount {
   process {
-    if (($_.sis.dayCount -gt 1) -and ($_.sis.pbType -ne 'PBN')) { return $_ }
-    # If dayCount is null or zero then it needs to be filled in.
-    $_.days = if ($_.sis.pbType -eq 'PBN') { 3650 } else { 7 }
+    # If dayCount is null or zero then it needs to be filled in. Otherwise defaults to user supplied value
+    $_.days = if (([int]$_.sis.dayCount -gt 1) -and ($_.sis.pbType -ne 'PBN')) { $_.sis.dayCount }
+    elseif ($_.sis.pbType -eq 'PBN') { 3650 }
+    else { 7 }
     $_
   }
 }
