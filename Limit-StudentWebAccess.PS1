@@ -226,6 +226,15 @@ function Show-Obj {
   }
 }
 
+function Skip-NoGmail {
+  process {
+    if ($_.ad.DistinguishedName -match 'No Gmail') {
+      return (Write-Verbose ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.ad.SamAccountName))
+    }
+    $_
+  }
+}
+
 function Test-ADSession {
   # AD Domain Controller Session
   if (($global:dc) -and (Test-ComputerSecureChannel -Server $global:dc)) { return }
@@ -297,6 +306,7 @@ do {
   # Process existing entries
   $sisActivePenaltyData |
   Format-FirstObj |
+  Skip-NoGmail |
   Update-StartDate $sqlParamsSIS $setStartDate |
   Set-StartDate |
   Set-DayCount |
@@ -314,6 +324,7 @@ do {
   # Process deleted/missing entries
   Get-ADInPenaltyOU $penaltyOrgUnits |
   Format-SecondObj |
+  Skip-NoGmail |
   Compare-SISActviePenalty $sisActivePenaltyData |
   Get-StuSISEntry $sqlParamsSIS $getStuSISEntry |
   Get-SiteData $lookUpTable |
