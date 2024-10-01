@@ -62,7 +62,10 @@ function Get-ADInPenaltyOU ($orgUnits) {
 function Get-Email {
   process {
     if ($_.sis.staffUsr.length -lt 1) { return $_ }
-    $obj = Get-ADuser -Filter ("SamAccountName -eq '{0}'" -f $_.sis.staffUsr) -Properties Mail
+    # if Admin running as user theh we try a regex for the word 'as', split the result, and take index [2].
+    $splitStaffAccountName = if ($_.sis.staffUsr -match "\bas\b") { ($_.sis.staffUsr -split "\s")[2] }
+    $staffSam = if ($splitStaffAccountName) { $splitStaffAccountName } else { $_.sis.staffUsr }
+    $obj = Get-ADuser -Filter ("SamAccountName -eq '{0}'" -f $staffSam) -Properties Mail
     if (!$obj) { Write-Host ('{0},{1},AD Staff obj not found' -f $MyInvocation.MyCommand.Name, $_.sis.staffUsr) -F Red }
     $_.staffEmail = $obj.Mail
     $_
