@@ -5,4 +5,4 @@ SELECT
 ,STU.GR AS grade
 ,STU.SC AS siteCode
 FROM STU
-WHERE id = {0} AND sc = {1};
+WHERE id = @id AND sc = @sc;

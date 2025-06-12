@@ -24,7 +24,7 @@ param (
   [SWITCH]$WhatIf
 )
 
-function Compare-SISActviePenalty ($data) {
+function Compare-SISActivePenalty ($data) {
   process {
     $id = $_.ad.EmployeeId
     $obj = $data | Where-Object { $_.permId -eq $id }
@@ -74,8 +74,8 @@ function Get-Email {
 
 function Get-StuSISEntry ($params, $baseSql) {
   process {
-    $sql = $baseSql -f $_.ad.EmployeeID, $_.ad.departmentNumber[0]
-    $_.sis = Invoke-SqlCmd @params -Query $sql | ConvertTo-Csv | ConvertFrom-Csv
+    $sqlVars = "id=$($_.ad.EmployeeID)", "sc=$($_.ad.departmentNumber[0])"
+    $_.sis = New-SqlOperation @params -Query $baseSql -Parameters $sqlVars | ConvertTo-Csv | ConvertFrom-Csv
     $_
   }
 }
@@ -90,7 +90,7 @@ function Get-SiteData ($lookUpTable) {
 }
 
 function Get-SISActivePenatly ($params, $query) {
-  Invoke-SqlCmd @params -Query $query | ConvertTo-Csv | ConvertFrom-Csv
+  New-SqlOperation @params -Query $query | ConvertTo-Csv | ConvertFrom-Csv
 }
 
 function Get-StuADInfo {
@@ -238,21 +238,21 @@ function Skip-NoGmail {
   }
 }
 
-function Test-ADSession {
-  # AD Domain Controller Session
-  if (($global:dc) -and (Test-ComputerSecureChannel -Server $global:dc)) { return }
-  Clear-SessionData
-  $global:dc = Select-DomainController $DomainControllers
-  $adCmdLets = 'Get-ADUser', 'Set-ADUser', 'Move-ADObject', 'Get-ADOrganizationalUnit'
-  New-ADSession -dc $dc -cmdlets $adCmdLets -cred $ADCredential
-}
+# function Test-ADSession {
+#   # AD Domain Controller Session
+#   if (($global:dc) -and (Test-ComputerSecureChannel -Server $global:dc)) { return }
+#   Clear-SessionData
+#   $global:dc = Select-DomainController $DomainControllers
+#   $adCmdLets = 'Get-ADUser', 'Set-ADUser', 'Move-ADObject', 'Get-ADOrganizationalUnit'
+#   New-ADSession -dc $dc -cmdlets $adCmdLets -cred $ADCredential
+# }
 
 function Update-PenaltyDays ($params, $baseSql) {
   process {
     if (($_.sis.dayCount -lt 1) -or (($_.sis.pbType -eq 'PBN') -and ($_.sis.dayCount -ne 3650))) {
-      $sql = $baseSql -f $_.days, $_.sis.permId, $_.sis.pbType
-      Write-Host ('{0},{1},{2}' -f $MyInvocation.MyCommand.Name, $_.sis.permId, $sql) -F Blue
-      if (!$WhatIf) { Invoke-Sqlcmd @params -Query $sql }
+      $sqlVars = "days=$($_.days)", "id=$($_.sis.permId)", "pbType=$($_.sis.pbType)"
+      Write-Host ('{0},{1},{2}' -f $MyInvocation.MyCommand.Name, ($sqlVars -join ',') ) -F Blue
+      if (!$WhatIf) { New-SqlOperation @params -Query $baseSql -Parameters $sqlVars }
     }
     $_
   }
@@ -261,31 +261,25 @@ function Update-PenaltyDays ($params, $baseSql) {
 function Update-StartDate ($params, $baseSql) {
   process {
     if ($_.sis.startDate.length -lt 1 ) {
-      $sql = $baseSql -f $_.sis.permId, $_.sis.pbType
-      Write-Host ('{0},{1},{2}' -f $MyInvocation.MyCommand.Name, $_.sis.permId, $sql) -F Blue
-      if (!$WhatIf) { Invoke-Sqlcmd @params -Query $sql }
+      $sqlVars = "id=$($_.sis.permId)", "pbType=$($_.sis.pbType)"
+      Write-Host ('{0},{1},{2}' -f $MyInvocation.MyCommand.Name, ($sqlVars -join ',')) -F Blue
+      if (!$WhatIf) { New-SqlOperation @params -Query $baseSql -Parameters $sqlVars }
     }
     $_
   }
 }
 
-# =============================== Main ==================================
-# Imported Functions
-. .\lib\Clear-SessionData.ps1
-. .\lib\Load-Module.ps1
-. .\lib\New-ADSession.ps1
-. .\lib\Select-DomainController.ps1
-. .\lib\Show-TestRun.ps1
+Import-Module CommonScriptFunctions
+Import-Module -Name dbatools -Cmdlet Invoke-DbaQuery, Set-DbatoolsConfig
 
-Show-TestRun
+Show-BlockInfo Main
 
-'SqlServer' | Load-Module
+if ($WhatIf) { Show-TestRun }
 
 $sqlParamsSIS = @{
-  Server                 = $SISServer
-  Database               = $SISDatabase
-  Credential             = $SISCredential
-  TrustServerCertificate = $true
+  Server     = $SISServer
+  Database   = $SISDatabase
+  Credential = $SISCredential
 }
 
 $lookUpTable = Get-Content -Path .\json\lookupTable.json -Raw | ConvertFrom-Json
@@ -295,48 +289,52 @@ $getStuSISEntry = Get-Content -Path .\sql\get-stu-sis.sql -Raw
 $setDayCount = Get-Content -Path .\sql\set-daycount.sql -Raw
 $setStartDate = Get-Content -Path .\sql\set-startdate.sql -Raw
 
-Test-ADSession
-
+$adCmdLets = 'Get-ADUser', 'Set-ADUser', 'Move-ADObject', 'Get-ADOrganizationalUnit'
+Connect-ADSession -DomainControllers $DomainControllers -Credential $ADCredential -Cmdlets $adCmdLets
 $penaltyOrgUnits = Get-ADOrganizationalUnit -Filter "name -like '*Penalty*Box*'"
+Clear-SessionData
 
 $waitInterval = 60
 if (!$WhatIf) { "Runs every $waitInterval seconds" }
 do {
-  Test-ADSession
+  Connect-ADSession -DomainControllers $DomainControllers -Credential $ADCredential -Cmdlets $adCmdLets
 
   $sisActivePenaltyData = Get-SISActivePenatly $sqlParamsSIS $getSISLimitedStuData
 
   # Process existing entries
   $sisActivePenaltyData |
-  Format-FirstObj |
-  Skip-NoGmail |
-  Update-StartDate $sqlParamsSIS $setStartDate |
-  Set-StartDate |
-  Set-DayCount |
-  Update-PenaltyDays $sqlParamsSIS $setDayCount |
-  Set-EndDate |
-  Get-StuADInfo |
-  Get-SiteData $lookUpTable |
-  Get-Email |
-  Set-LimitStatus |
-  Get-TargetOU |
-  Move-ToTargetOU |
-  Send-Msg ($htmlMsg) |
-  Show-Obj
+    Format-FirstObj |
+      Skip-NoGmail |
+        Update-StartDate $sqlParamsSIS $setStartDate |
+          Set-StartDate |
+            Set-DayCount |
+              Update-PenaltyDays $sqlParamsSIS $setDayCount |
+                Set-EndDate |
+                  Get-StuADInfo |
+                    Get-SiteData $lookUpTable |
+                      Get-Email |
+                        Set-LimitStatus |
+                          Get-TargetOU |
+                            Move-ToTargetOU |
+                              Send-Msg ($htmlMsg) |
+                                Show-Obj
 
   # Process deleted/missing entries
   Get-ADInPenaltyOU $penaltyOrgUnits |
-  Format-SecondObj |
-  Skip-NoGmail |
-  Compare-SISActviePenalty $sisActivePenaltyData |
-  Get-StuSISEntry $sqlParamsSIS $getStuSISEntry |
-  Get-SiteData $lookUpTable |
-  Get-TargetOU |
-  Move-ToTargetOU |
-  Show-Obj
+    Format-SecondObj |
+      Skip-NoGmail |
+        Compare-SISActivePenalty $sisActivePenaltyData |
+          Get-StuSISEntry $sqlParamsSIS $getStuSISEntry |
+            Get-SiteData $lookUpTable |
+              Get-TargetOU |
+                Move-ToTargetOU |
+                  Show-Obj
 
+  Clear-SessionData
   if (!$WhatIf) {
     Write-Verbose "Waiting $waitInterval..."
     Start-Sleep $waitInterval
   }
 } until ($WhatIf -or ((Get-Date) -ge (Get-Date $StopTime)))
+
+if ($WhatIf) { Show-TestRun }

@@ -1,8 +1,8 @@
 --
 -- Try to only update newer entries
-UPDATE DSD SET DY = '{0}'
+UPDATE DSD SET DY = @days
 WHERE
-ID = {1}
-AND DS = '{2}'
+ID = @id
+AND DS = @pbType
 AND DTS > DATEADD(day,-5,getdate());
 --
