@@ -253,7 +253,7 @@ function Update-StartDate ($params, $baseSql) {
  process {
   if ($_.sis.startDate.length -lt 1 ) {
    $sqlVars = "id=$($_.sis.permId)", "pbType=$($_.sis.pbType)"
-   Write-Host ('{0},{1},{2}' -f $MyInvocation.MyCommand.Name, ($sqlVars -join ',')) -F Blue
+   Write-Host ('{0},{1},{2}' -f $MyInvocation.MyCommand.Name, $baseSql, ($sqlVars -join ',')) -F Blue
    if (!$WhatIf) { New-SqlOperation @params -Query $baseSql -Parameters $sqlVars }
   }
   $_
