@@ -157,14 +157,16 @@ function Move-ToTargetOU {
 function Send-Msg ($baseHtml) {
  begin {
   $params = @{
-   From       = '<{0}>' -f $EmailCredential.Username
+   From       = '{0}' -f $EmailCredential.Username
    Subject    = '{0} {1} - Student to Penalty Box' -f $_.sis.firstName, $_.sis.lastName
-   BodyAsHTML = $True
+   Html       = $null
    Bcc        = $null
    SMTPServer = 'smtp.office365.com'
    Cred       = $EmailCredential # use a valid email account with flow rules in place to prevent SPAM warnings.
    UseSSL     = $True
    Port       = 587
+   # Suppress   = $true
+   WhatIf     = $WhatIf
   }
  }
  process {
@@ -172,15 +174,18 @@ function Send-Msg ($baseHtml) {
 
   $msg = $MyInvocation.MyCommand.Name, $_.staffEmail, $_.ad.SamAccountName, $_.sis.startDate, $_.sis.endDate
 
-  $params.To = '<{0}>' -f $_.staffEmail
-  $params.Body = $baseHtml -f $_.sis.firstName, $_.sis.lastName, $_.sis.startDate, $_.sis.endDate,
-  $_.sis.permId, $_.site.siteName, $_.sis.grade
-  if ( $Bcc ) { $params.Bcc = $Bcc } # Add Bcc to outgoing email messages.
-  if (!$WhatIf) {
-   try { Send-MailMessage @params }
-   catch { return (Write-Error ('{0},{1},{2},{3},{4}' -f $msg)) }
+  $params.To = '{0}' -f $_.staffEmail
+  if (!$params.To) {
+   Write-Host ('{0},{1},Staff email address missing ¯\_(ツ)_/¯. Skipping email.' -f $MyInvocation.MyCommand.Name, $_.ad.SamAccountName) -F Red
+   return $_
   }
-  # Write-Verbose ($params.Body | Out-String)
+  $params.Html = $baseHtml -f $_.sis.firstName, $_.sis.lastName, $_.sis.startDate, $_.sis.endDate,
+  $_.sis.permId, $_.site.siteName, $_.sis.grade
+  if ( $Bcc ) { $params.Bcc = $Bcc }
+  Send-EmailMessage @params # Add Bcc to outgoing email messages.
+  # try { Send-EmailMessage @params }
+  # catch { return (Write-Error ('{0},{1},{2},{3},{4}' -f $msg)) }
+  # Write-Verbose ($params.Html | Out-String)
   Write-Host ('{0},{1},{2},{3},{4}' -f $msg) -F Blue
   $_
  }
@@ -260,8 +265,9 @@ function Update-StartDate ($params, $baseSql) {
  }
 }
 
-Import-Module CommonScriptFunctions
-Import-Module -Name dbatools -Cmdlet Invoke-DbaQuery, Set-DbatoolsConfig
+Import-Module -Name CommonScriptFunctions -Cmdlet Show-TestRun, Clear-SessionData, New-SqlOperation
+Import-Module -Name Mailozaurr -Cmdlet Send-EmailMessage
+Import-Module -Name dbatools -Cmdlet Invoke-DbaQuery, Set-DbatoolsConfig, Connect-DbaInstance, Disconnect-DbaInstance
 
 Show-BlockInfo Main
 
@@ -303,7 +309,7 @@ do {
             Set-LimitStatus |
              Get-TargetOU |
               Move-ToTargetOU |
-               Send-Msg ($htmlMsg) |
+               Send-Msg $htmlMsg |
                 Show-Obj
 
  # Process deleted/missing entries
