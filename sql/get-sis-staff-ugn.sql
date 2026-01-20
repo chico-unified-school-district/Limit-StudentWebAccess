@@ -1,0 +1,1 @@
+SELECT TOP 1 EM FROM UGN WHERE UN = @username;

@@ -59,15 +59,19 @@ function Get-ADInPenaltyOU ($orgUnits) {
  $orgUnits | ForEach-Object { Get-ADUser @params -SearchBase $_.DistinguishedName }
 }
 
-function Get-Email {
+function Get-StaffEmail ($instance, $sql) {
  process {
   if ($_.sis.staffUsr.length -lt 1) { return $_ }
   # if Admin running as user then we try a regex for the word 'as', split the result, and take index [2].
   $splitStaffAccountName = if ($_.sis.staffUsr -match '\bas\b') { ($_.sis.staffUsr -split '\s')[2] }
   $staffSam = if ($splitStaffAccountName) { $splitStaffAccountName } else { $_.sis.staffUsr }
-  $obj = Get-ADUser -Filter ("SamAccountName -eq '{0}'" -f $staffSam) -Properties Mail
-  if (!$obj) { Write-Host ('{0},{1},AD Staff obj not found' -f $MyInvocation.MyCommand.Name, $_.sis.staffUsr) -F Red }
-  $_.staffEmail = $obj.Mail
+  $_.staffEmail = (Get-ADUser -Filter ("SamAccountName -eq '{0}'" -f $staffSam) -Properties Mail).Mail
+  if ($_.staffEmail -like '*@*') { return $_ } # Successful AD email lookup
+  Write-Verbose ('{0},{1},AD Staff email not found. Trying UGN lookup...' -f $MyInvocation.MyCommand.Name, $_.sis.staffUsr)
+  $data = New-SqlOperation $instance -Query $sql -Parameters "username=$($_.sis.staffUsr)"
+  $_.staffEmail = $data.EM
+  if ($_.staffEmail -like '*@*') { return $_ } # Successful UGN email lookup
+  Write-Host ('{0},{1},Staff email not found.' -f $MyInvocation.MyCommand.Name, $_.sis.staffUsr) -F Red
   $_
  }
 }
@@ -276,6 +280,7 @@ if ($WhatIf) { Show-TestRun }
 $lookUpTable = Get-Content -Path .\json\lookupTable.json -Raw | ConvertFrom-Json
 $htmlMsg = Get-Content '.\html\msg.html' -Raw
 $getSISLimitedStuData = Get-Content -Path .\sql\get-sis-limited-stu-data.sql -Raw
+$getSISStaffUGN = Get-Content -Path .\sql\get-sis-staff-ugn.sql -Raw
 $getStuSISEntry = Get-Content -Path .\sql\get-stu-sis.sql -Raw
 $setDayCount = Get-Content -Path .\sql\set-daycount.sql -Raw
 $setStartDate = Get-Content -Path .\sql\set-startdate.sql -Raw
@@ -305,7 +310,7 @@ do {
         Set-EndDate |
          Get-StuADInfo |
           Get-SiteData $lookUpTable |
-           Get-Email |
+           Get-StaffEmail $sqlInstance $getSISStaffUGN |
             Set-LimitStatus |
              Get-TargetOU |
               Move-ToTargetOU |
