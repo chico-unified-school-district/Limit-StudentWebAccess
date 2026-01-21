@@ -160,9 +160,10 @@ function Move-ToTargetOU {
 
 function Send-Msg ($baseHtml) {
  begin {
+  $baseSubject = '{0} {1} - Student to Penalty Box'
   $params = @{
    From       = '{0}' -f $EmailCredential.Username
-   Subject    = '{0} {1} - Student to Penalty Box' -f $_.sis.firstName, $_.sis.lastName
+   Subject    = $null
    Html       = $null
    Bcc        = $null
    SMTPServer = 'smtp.office365.com'
@@ -179,17 +180,15 @@ function Send-Msg ($baseHtml) {
   $msg = $MyInvocation.MyCommand.Name, $_.staffEmail, $_.ad.SamAccountName, $_.sis.startDate, $_.sis.endDate
 
   $params.To = '{0}' -f $_.staffEmail
+  $params.Subject = $baseSubject -f $_.sis.firstName, $_.sis.lastName
   if (!$params.To) {
    Write-Host ('{0},{1},Staff email address missing ¯\_(ツ)_/¯. Skipping email.' -f $MyInvocation.MyCommand.Name, $_.ad.SamAccountName) -F Red
    return $_
   }
   $params.Html = $baseHtml -f $_.sis.firstName, $_.sis.lastName, $_.sis.startDate, $_.sis.endDate,
   $_.sis.permId, $_.site.siteName, $_.sis.grade
-  if ( $Bcc ) { $params.Bcc = $Bcc }
-  Send-EmailMessage @params # Add Bcc to outgoing email messages.
-  # try { Send-EmailMessage @params }
-  # catch { return (Write-Error ('{0},{1},{2},{3},{4}' -f $msg)) }
-  # Write-Verbose ($params.Html | Out-String)
+  if ( $Bcc ) { $params.Bcc = $Bcc } # Add Bcc to outgoing email messages.
+  Send-EmailMessage @params
   Write-Host ('{0},{1},{2},{3},{4}' -f $msg) -F Blue
   $_
  }
