@@ -165,7 +165,6 @@ function Send-Msg ($baseHtml) {
    From       = '{0}' -f $EmailCredential.Username
    Subject    = $null
    Html       = $null
-   Bcc        = $null
    SMTPServer = 'smtp.office365.com'
    Cred       = $EmailCredential # use a valid email account with flow rules in place to prevent SPAM warnings.
    UseSSL     = $True
