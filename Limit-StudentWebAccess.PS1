@@ -4,24 +4,14 @@ https://www.reddit.com/r/k12sysadmin/comments/oghqj8/how_to_disablereenable_devi
 #>
 [cmdletbinding()]
 param (
- [Parameter(Mandatory = $True)]
- [Alias('DCs')]
- [string[]]$DomainControllers,
- [Parameter(Mandatory = $True)]
- [System.Management.Automation.PSCredential]$ADCredential,
- [Parameter(Mandatory = $True)]
- [string]$SISServer,
- [Parameter(Mandatory = $True)]
- [string]$SISDatabase,
- [Parameter(Mandatory = $True)]
- [System.Management.Automation.PSCredential]$SISCredential,
- [Parameter(Mandatory = $True)]
- [System.Management.Automation.PSCredential]$EmailCredential,
- [Parameter(Mandatory = $false)]
- [string[]]$Bcc,
+ [Parameter(Mandatory = $True)][PSCredential]$ADCredential,
+ [Parameter(Mandatory = $True)][string]$SISServer,
+ [Parameter(Mandatory = $True)][string]$SISDatabase,
+ [Parameter(Mandatory = $True)][PSCredential]$SISCredential,
+ [Parameter(Mandatory = $True)][PSCredential]$EmailCredential,
+ [Parameter(Mandatory = $false)][string[]]$Bcc,
  [string]$StopTime,
- [Alias('wi')]
- [SWITCH]$WhatIf
+ [Alias('wi')][SWITCH]$WhatIf
 )
 
 function Compare-SISActivePenalty ($data) {
@@ -50,27 +40,32 @@ function Format-SecondObj {
  }
 }
 
-function Get-ADInPenaltyOU ($orgUnits) {
+function Get-ADInPenaltyOU ($ou, [pscredential]$cred) {
  $params = @{
   Filter     = "gecos -like '*' -and EmployeeId -like '*'"
   Properties = 'EmployeeID', 'gecos', 'departmentNumber'
  }
  Write-Verbose ('{0}' -f $MyInvocation.MyCommand.Name)
- $orgUnits | ForEach-Object { Get-ADUser @params -SearchBase $_.DistinguishedName }
+ $ou | ForEach-Object { Get-ADUser @params -SearchBase $_.DistinguishedName -Credential $cred }
 }
 
-function Get-StaffEmail ($instance, $sql) {
+function Get-StaffEmail ($instance, $sql, [pscredential]$cred) {
  process {
   if ($_.sis.staffUsr.length -lt 1) { return $_ }
+
   # if Admin running as user then we try a regex for the word 'as', split the result, and take index [2].
   $splitStaffAccountName = if ($_.sis.staffUsr -match '\bas\b') { ($_.sis.staffUsr -split '\s')[2] }
   $staffSam = if ($splitStaffAccountName) { $splitStaffAccountName } else { $_.sis.staffUsr }
-  $_.staffEmail = (Get-ADUser -Filter ("SamAccountName -eq '{0}'" -f $staffSam) -Properties Mail).Mail
+  $_.staffEmail = (Get-ADUser -Filter ("SamAccountName -eq '{0}'" -f $staffSam) -Properties Mail -Credential $cred).Mail
+
   if ($_.staffEmail -like '*@*') { return $_ } # Successful AD email lookup
+
   Write-Verbose ('{0},{1},AD Staff email not found. Trying UGN lookup...' -f $MyInvocation.MyCommand.Name, $_.sis.staffUsr)
   $data = New-SqlOperation $instance -Query $sql -Parameters "username=$($_.sis.staffUsr)"
   $_.staffEmail = $data.EM
+
   if ($_.staffEmail -like '*@*') { return $_ } # Successful UGN email lookup
+
   Write-Host ('{0},{1},Staff email not found.' -f $MyInvocation.MyCommand.Name, $_.sis.staffUsr) -F Red
   $_
  }
@@ -97,11 +92,11 @@ function Get-SISActivePenalty ($params, $query) {
  New-SqlOperation @params -Query $query | ConvertTo-Csv | ConvertFrom-Csv
 }
 
-function Get-StuADInfo {
+function Get-StuADInfo ([pscredential]$cred) {
  process {
   if ($global:missingInAD -contains $_.sis.permId) { return }
   $properties = 'departmentNumber'
-  $obj = Get-ADUser -Filter ("EmployeeId -eq '{0}'" -f $_.sis.permId) -Properties $properties
+  $obj = Get-ADUser -Filter ("EmployeeId -eq '{0}'" -f $_.sis.permId) -Properties $properties -Credential $cred
   if (!$obj) {
    $global:missingInAD += $_.sis.permId
    $msg = $MyInvocation.MyCommand.Name, $_.sis.permId
@@ -143,14 +138,14 @@ function Get-TargetOU {
  }
 }
 
-function Move-ToTargetOU {
+function Move-ToTargetOU ([pscredential]$cred) {
  process {
   $msg = $MyInvocation.MyCommand.Name, $_.ad.SamAccountName, ($_.targetOU.Split(',')[0..1] -join ',')
   $currentOU = $_.ad.DistinguishedName.Split(',')[1..100] -join ','
   Write-Verbose ($_.ad.SamAccountName, "Current: $currentOU", "Target:  $($_.targetOU)" | Out-String)
   if ($currentOU -eq $_.targetOU) { return $_ }
 
-  try { Move-ADObject -Identity $_.ad.ObjectGUID -TargetPath $_.targetOU -Confirm:$false -WhatIf:$WhatIf }
+  try { Move-ADObject -Identity $_.ad.ObjectGUID -TargetPath $_.targetOU -Confirm:$false -Credential $cred -WhatIf:$WhatIf }
   catch { return (Write-Error ('{0},{1},{2}' -f $msg)) }
   Write-Host ('{0},{1},{2}' -f $msg) -f Blue
   if ($_.limitAccess -eq $true) { $_.sendMsg = $true }
@@ -284,16 +279,14 @@ $setDayCount = Get-Content -Path .\sql\set-daycount.sql -Raw
 $setStartDate = Get-Content -Path .\sql\set-startdate.sql -Raw
 
 $adCmdLets = 'Get-ADUser', 'Set-ADUser', 'Move-ADObject', 'Get-ADOrganizationalUnit'
-Connect-ADSession -DomainControllers $DomainControllers -Credential $ADCredential -Cmdlets $adCmdLets
-$penaltyOrgUnits = Get-ADOrganizationalUnit -Filter "name -like '*Penalty*Box*'"
-Clear-SessionData
+Import-Module -Name ActiveDirectory -Cmdlet $adCmdLets -WarningAction SilentlyContinue -ErrorAction Stop
+$penaltyOrgUnits = Get-ADOrganizationalUnit -Filter "name -like '*Penalty*Box*'" -Credential $ADCredential
 
 $sqlInstance = Connect-DbaInstance -SqlInstance $SISServer -Database $SISDatabase -SqlCredential $SISCredential
 
 $waitInterval = 60
 if (!$WhatIf) { "Runs every $waitInterval seconds" }
 do {
- Connect-ADSession -DomainControllers $DomainControllers -Credential $ADCredential -Cmdlets $adCmdLets
 
  $sisActivePenaltyData = Get-SISActivePenalty $sqlInstance $getSISLimitedStuData
 
@@ -306,31 +299,30 @@ do {
       Set-DayCount |
        Update-PenaltyDays $sqlInstance $setDayCount |
         Set-EndDate |
-         Get-StuADInfo |
+         Get-StuADInfo -cred $ADCredential |
           Get-SiteData $lookUpTable |
-           Get-StaffEmail $sqlInstance $getSISStaffUGN |
+           Get-StaffEmail -instance $sqlInstance -sql $getSISStaffUGN -cred $ADCredential |
             Set-LimitStatus |
              Get-TargetOU |
-              Move-ToTargetOU |
+              Move-ToTargetOU -cred $ADCredential |
                Send-Msg $htmlMsg |
                 Show-Obj
 
  # Process deleted/missing entries
- Get-ADInPenaltyOU $penaltyOrgUnits |
+ Get-ADInPenaltyOU -ou $penaltyOrgUnits -cred $ADCredential |
   Format-SecondObj |
    Skip-NoGmail |
     Compare-SISActivePenalty $sisActivePenaltyData |
-     Get-StuSISEntry $sqlInstance $getStuSISEntry |
+     Get-StuSISEntry -instance $sqlInstance -sql $getStuSISEntry -cred $ADCredential |
       Get-SiteData $lookUpTable |
        Get-TargetOU |
-        Move-ToTargetOU |
+        Move-ToTargetOU -cred $ADCredential |
          Show-Obj
 
- Clear-SessionData
- if (!$WhatIf) {
-  Write-Verbose "Waiting $waitInterval..."
-  Start-Sleep $waitInterval
- }
-} until ($WhatIf -or ((Get-Date) -ge (Get-Date $StopTime)))
+
+ if ($WhatIf) { break }
+ Write-Verbose "Waiting $waitInterval..."
+ Start-Sleep $waitInterval
+} until ((Get-Date) -ge (Get-Date $StopTime))
 
 if ($WhatIf) { Show-TestRun }
