@@ -23,23 +23,6 @@ function Compare-SISActivePenalty ($data) {
  }
 }
 
-function Format-FirstObj {
- process {
-  $obj = '' | Select-Object sis, ad, site, days, targetOU, staffEmail, sendMsg, limitAccess
-  $obj.sis = $_ # Drop entire converted sis object into 'sis' prop
-  $obj.sendMsg = $false
-  $obj
- }
-}
-
-function Format-SecondObj {
- process {
-  $obj = '' | Select-Object -Property sis, ad, site, targetOU, limitAccess
-  $obj.ad = $_
-  $obj
- }
-}
-
 function Get-ADInPenaltyOU ($ou, [pscredential]$cred) {
  $params = @{
   Filter     = "gecos -like '*' -and EmployeeId -like '*'"
@@ -107,48 +90,21 @@ function Get-StuADInfo ([pscredential]$cred) {
  }
 }
 
-function Get-TargetOU {
- begin {
-  function Format-Grade ($grade) {
-   switch ($grade) {
-    -1 { 'Prek' }; -2 { 'Prek' }; 0 { 'K' }; 1 { '1st' }; 2 { '2nd' }; 3 { '3rd' }; 4 { '4th' }; 5 { '5th' };
-    6 { '6th' }; 7 { '7th' }; 8 { '8th' }; 9 { '9th' }; 10 { '10th' }; 11 { '11th' }; 12 { '12th' };
-    13 { '12th' }; 14 { '12th' }; 17 { 'Prek' }; 18 { 'Prek' }
-   }
-  }
-  function Format-OrgUnitPath {
-   process {
-    # Skip Handling of School 19 (Special Education) and Grades Over the 18th Level
-    # The departmentNumber attribute is an array so we reference the zeroth index
-    if ([int]$_.sis.grade -le 18) {
-     # Build proper OU path based on grade level
-     'OU={0},{1}' -f (Format-Grade $_.sis.grade), $_.site.OrgUnit
-    }
-    else {
-     $_.site.OrgUnit
-    }
-   }
-  }
- }
+function New-Obj {
  process {
-  $targOU = if ($_.limitAccess -eq $true) { 'OU=Penalty Box,' + $_.site.OrgUnit } else { $_ | Format-OrgUnitPath }
-  $_.targetOU = $targOU
-  $_
- }
-}
-
-function Move-ToTargetOU ([pscredential]$cred) {
- process {
-  $msg = $MyInvocation.MyCommand.Name, $_.ad.SamAccountName, ($_.targetOU.Split(',')[0..1] -join ',')
-  $currentOU = $_.ad.DistinguishedName.Split(',')[1..100] -join ','
-  Write-Verbose ($_.ad.SamAccountName, "Current: $currentOU", "Target:  $($_.targetOU)" | Out-String)
-  if ($currentOU -eq $_.targetOU) { return $_ }
-
-  try { Move-ADObject -Identity $_.ad.ObjectGUID -TargetPath $_.targetOU -Confirm:$false -Credential $cred -WhatIf:$WhatIf }
-  catch { return (Write-Error ('{0},{1},{2}' -f $msg)) }
-  Write-Host ('{0},{1},{2}' -f $msg) -f Blue
-  if ($_.limitAccess -eq $true) { $_.sendMsg = $true }
-  $_
+  $obj = [pscustomobject]@{
+   ad          = $null
+   days        = $null
+   limitAccess = $false
+   sis         = $null
+   site        = $null
+   staffEmail  = $null
+   sendMsg     = $null
+   targetOU    = $null
+  }
+  if ($_.DistinguishedName) { $obj.ad = $_ }
+  else { $obj.sis = $_ }
+  $obj
  }
 }
 
@@ -205,8 +161,14 @@ function Set-EndDate {
  }
 }
 
+function Set-StartDate {
+ process {
+  $_.sis.startDate = if ($_.sis.startDate.length -lt 1) { Get-Date } else { Get-Date $_.sis.startDate }
+  $_
+ }
+}
 
-function Set-LimitStatus {
+function Set-PropLimitStatus {
  begin { $now = Get-Date }
  process {
   $_.limitAccess = if ($now -lt $_.sis.endDate) { $true }
@@ -214,9 +176,32 @@ function Set-LimitStatus {
  }
 }
 
-function Set-StartDate {
+function Set-PropTargetOU {
+ begin {
+  function Format-Grade ($grade) {
+   switch ($grade) {
+    -1 { 'Prek' }; -2 { 'Prek' }; 0 { 'K' }; 1 { '1st' }; 2 { '2nd' }; 3 { '3rd' }; 4 { '4th' }; 5 { '5th' };
+    6 { '6th' }; 7 { '7th' }; 8 { '8th' }; 9 { '9th' }; 10 { '10th' }; 11 { '11th' }; 12 { '12th' };
+    13 { '12th' }; 14 { '12th' }; 17 { 'Prek' }; 18 { 'Prek' }
+   }
+  }
+  function Format-OrgUnitPath {
+   process {
+    # Skip Handling of School 19 (Special Education) and Grades Over the 18th Level
+    # The departmentNumber attribute is an array so we reference the zeroth index
+    if ([int]$_.sis.grade -le 18) {
+     # Build proper OU path based on grade level
+     'OU={0},{1}' -f (Format-Grade $_.sis.grade), $_.site.OrgUnit
+    }
+    else {
+     $_.site.OrgUnit
+    }
+   }
+  }
+ }
  process {
-  $_.sis.startDate = if ($_.sis.startDate.length -lt 1) { Get-Date } else { Get-Date $_.sis.startDate }
+  $targOU = if ($_.limitAccess -eq $true) { 'OU=Penalty Box,' + $_.site.OrgUnit } else { $_ | Format-OrgUnitPath }
+  $_.targetOU = $targOU
   $_
  }
 }
@@ -261,9 +246,34 @@ function Update-StartDate ($params, $baseSql) {
  }
 }
 
+function Update-TargetOU ([pscredential]$cred) {
+ process {
+  $msg = $MyInvocation.MyCommand.Name, $_.ad.SamAccountName, ($_.targetOU.Split(',')[0..1] -join ',')
+  $currentOU = $_.ad.DistinguishedName.Split(',')[1..100] -join ','
+  Write-Verbose ($_.ad.SamAccountName, "Current: $currentOU", "Target:  $($_.targetOU)" | Out-String)
+  if ($_.ad.DistinguishedName -match $_.targetOU) { return $_ }
+  $params = @{
+   Identity   = $_.ad.ObjectGUID
+   TargetPath = $_.targetOU
+   Confirm    = $false
+   Credential = $cred
+   WhatIf     = $WhatIf
+  }
+  try { Move-ADObject @params }
+  catch { return (Write-Error ('{0},{1},{2}' -f $msg)) }
+  Write-Host ('{0},{1},{2}' -f $msg) -f Blue
+  if ($_.limitAccess -eq $true) { $_.sendMsg = $true }
+  $_
+ }
+}
+# =====================================================================================================
+Show-BlockInfo Start
+
 Import-Module -Name CommonScriptFunctions -Cmdlet Show-TestRun, Clear-SessionData, New-SqlOperation
 Import-Module -Name Mailozaurr -Cmdlet Send-EmailMessage
 Import-Module -Name dbatools -Cmdlet Invoke-DbaQuery, Set-DbatoolsConfig, Connect-DbaInstance, Disconnect-DbaInstance
+$adCmdLets = 'Get-ADUser', 'Set-ADUser', 'Move-ADObject', 'Get-ADOrganizationalUnit'
+Import-Module -Name ActiveDirectory -Cmdlet $adCmdLets -WarningAction SilentlyContinue -ErrorAction Stop
 
 Show-BlockInfo Main
 
@@ -277,8 +287,6 @@ $getStuSISEntry = Get-Content -Path .\sql\get-stu-sis.sql -Raw
 $setDayCount = Get-Content -Path .\sql\set-daycount.sql -Raw
 $setStartDate = Get-Content -Path .\sql\set-startdate.sql -Raw
 
-$adCmdLets = 'Get-ADUser', 'Set-ADUser', 'Move-ADObject', 'Get-ADOrganizationalUnit'
-Import-Module -Name ActiveDirectory -Cmdlet $adCmdLets -WarningAction SilentlyContinue -ErrorAction Stop
 $penaltyOrgUnits = Get-ADOrganizationalUnit -Filter "name -like '*Penalty*Box*'" -Credential $ADCredential
 
 $sqlInstance = Connect-DbaInstance -SqlInstance $SISServer -Database $SISDatabase -SqlCredential $SISCredential
@@ -286,12 +294,11 @@ $sqlInstance = Connect-DbaInstance -SqlInstance $SISServer -Database $SISDatabas
 $waitInterval = 60
 if (!$WhatIf) { "Runs every $waitInterval seconds" }
 do {
-
  $sisActivePenaltyData = Get-SISActivePenalty $sqlInstance $getSISLimitedStuData
 
  # Process existing entries
  $sisActivePenaltyData |
-  Format-FirstObj |
+  New-Obj |
    Skip-NoGmail |
     Update-StartDate $sqlInstance $setStartDate |
      Set-StartDate |
@@ -301,21 +308,21 @@ do {
          Get-StuADInfo -cred $ADCredential |
           Get-SiteData $lookUpTable |
            Get-StaffEmail -instance $sqlInstance -sql $getSISStaffUGN -cred $ADCredential |
-            Set-LimitStatus |
-             Get-TargetOU |
-              Move-ToTargetOU -cred $ADCredential |
-               Send-Msg $htmlMsg |
-                Show-Obj
+            Set-PropLimitStatus |
+             Set-PropTargetOU |
+              Update-TargetOU -cred $ADCredential |
+               # Send-Msg $htmlMsg |
+               Show-Obj
 
  # Process deleted/missing entries
  Get-ADInPenaltyOU -ou $penaltyOrgUnits -cred $ADCredential |
-  Format-SecondObj |
+  New-Obj |
    Skip-NoGmail |
     Compare-SISActivePenalty $sisActivePenaltyData |
      Get-StuSISEntry -instance $sqlInstance -sql $getStuSISEntry |
       Get-SiteData $lookUpTable |
-       Get-TargetOU |
-        Move-ToTargetOU -cred $ADCredential |
+       Set-PropTargetOU |
+        Update-TargetOU -cred $ADCredential |
          Show-Obj
 
 
