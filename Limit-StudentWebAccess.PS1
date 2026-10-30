@@ -311,8 +311,8 @@ do {
             Set-PropLimitStatus |
              Set-PropTargetOU |
               Update-TargetOU -cred $ADCredential |
-               Send-Msg $htmlMsg |
-                Show-Obj
+               # Send-Msg $htmlMsg |
+               Show-Obj
 
  # Process deleted/missing entries
  Get-ADInPenaltyOU -ou $penaltyOrgUnits -cred $ADCredential |
