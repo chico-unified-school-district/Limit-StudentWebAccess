@@ -251,7 +251,7 @@ function Update-TargetOU ([pscredential]$cred) {
   $msg = $MyInvocation.MyCommand.Name, $_.ad.SamAccountName, ($_.targetOU.Split(',')[0..1] -join ',')
   $currentOU = $_.ad.DistinguishedName.Split(',')[1..100] -join ','
   Write-Verbose ($_.ad.SamAccountName, "Current: $currentOU", "Target:  $($_.targetOU)" | Out-String)
-  if ($_.ad.DistinguishedName -match $_.targetOU) { return $_ }
+  if ($_.ad.DistinguishedName -match $_.targetOU) { return }
   $params = @{
    Identity   = $_.ad.ObjectGUID
    TargetPath = $_.targetOU
@@ -311,8 +311,8 @@ do {
             Set-PropLimitStatus |
              Set-PropTargetOU |
               Update-TargetOU -cred $ADCredential |
-               # Send-Msg $htmlMsg |
-               Show-Obj
+               Send-Msg $htmlMsg |
+                Show-Obj
 
  # Process deleted/missing entries
  Get-ADInPenaltyOU -ou $penaltyOrgUnits -cred $ADCredential |
